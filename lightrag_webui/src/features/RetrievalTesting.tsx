@@ -172,7 +172,7 @@ export default function RetrievalTesting() {
     })
   }, [])
 
-  const handleSubmit = useCallback(
+const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault()
       if (!inputValue.trim() || isLoading) return
@@ -364,7 +364,8 @@ export default function RetrievalTesting() {
             .slice(-effectiveHistoryTurns * 2)
             .map((m) => ({ role: m.role, content: m.content }))
           : [],
-        ...(modeOverride ? { mode: modeOverride } : {})
+        mode: 'naive' as QueryMode,       
+        enable_rerank: false, 
       }
 
       try {
@@ -382,7 +383,7 @@ export default function RetrievalTesting() {
           }
         } else {
           const response = await queryText(queryParams)
-          updateAssistantMessage(response.response)
+             updateAssistantMessage(response.response)
         }
       } catch (err) {
         // Handle error
