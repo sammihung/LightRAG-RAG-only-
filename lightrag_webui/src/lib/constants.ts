@@ -84,7 +84,7 @@ export const supportedFileTypes = {
 }
 
 export const SiteInfo = {
-  name: 'KAG',
+  name: 'LightRAG',
   home: '/',
   github: 'https://github.com/HKUDS/LightRAG'
 }
