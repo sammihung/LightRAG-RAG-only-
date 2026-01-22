@@ -40,15 +40,15 @@ function TabsNavigation() {
         <NavigationTab value="documents" currentTab={currentTab}>
           {t('header.documents')}
         </NavigationTab>
-        <NavigationTab value="knowledge-graph" currentTab={currentTab}>
+        {/* <NavigationTab value="knowledge-graph" currentTab={currentTab}>
           {t('header.knowledgeGraph')}
-        </NavigationTab>
+        </NavigationTab> */}
         <NavigationTab value="retrieval" currentTab={currentTab}>
           {t('header.retrieval')}
         </NavigationTab>
-        <NavigationTab value="api" currentTab={currentTab}>
+        {/* <NavigationTab value="api" currentTab={currentTab}>
           {t('header.api')}
-        </NavigationTab>
+        </NavigationTab> */}
       </TabsList>
     </div>
   )
@@ -125,11 +125,11 @@ export default function SiteHeader() {
               </Tooltip>
             </TooltipProvider>
           )}
-          <Button variant="ghost" size="icon" side="bottom" tooltip={t('header.projectRepository')}>
+          {/* <Button variant="ghost" size="icon" side="bottom" tooltip={t('header.projectRepository')}>
             <a href={SiteInfo.github} target="_blank" rel="noopener noreferrer">
               <GithubIcon className="size-4" aria-hidden="true" />
             </a>
-          </Button>
+          </Button> */}
           <AppSettings />
           {!isGuestMode && (
             <Button

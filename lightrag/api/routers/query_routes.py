@@ -1153,7 +1153,10 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
                     data={},
                 )
         except Exception as e:
-            logger.error(f"Error processing data query: {str(e)}", exc_info=True)
+            import traceback
+            logger.error(f"Error in stream response type: {type(e).__name__}")
+            logger.error(f"Error details: {repr(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise HTTPException(status_code=500, detail=str(e))
 
     return router
