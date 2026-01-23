@@ -1924,12 +1924,15 @@ class LightRAG:
                             await asyncio.gather(*first_stage_tasks)
 
                             # Stage 2: Process entity relation graph (after text_chunks are saved)
-                            entity_relation_task = asyncio.create_task(
-                                self._process_extract_entities(
-                                    chunks, pipeline_status, pipeline_status_lock
-                                )
-                            )
-                            chunk_results = await entity_relation_task
+                            # entity_relation_task = asyncio.create_task(
+                            #     self._process_extract_entities(
+                            #         chunks, pipeline_status, pipeline_status_lock
+                            #     )
+                            # )
+                            # chunk_results = await entity_relation_task
+                            logger.info("Skipping entity extraction for Normal RAG mode")
+                            chunk_results = [] # 返回空列表，騙過後面的 merge 函數
+                            file_extraction_stage_ok = True
                             file_extraction_stage_ok = True
 
                         except Exception as e:

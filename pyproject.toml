@@ -34,6 +34,7 @@ dependencies = [
     "pydantic",
     "pypinyin",
     "python-dotenv",
+    "raganything>=0.0.1",
     "setuptools",
     "tenacity",
     "tiktoken",
