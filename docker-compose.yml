@@ -10,11 +10,14 @@ services:
     ports:
       - "${PORT:-9621}:9621"
     volumes:
+      - ./lightrag/api:/app/lightrag/api
       - ./lightrag/lightrag.py:/app/lightrag/lightrag.py
       - ./data/rag_storage:/app/data/rag_storage
       - ./data/inputs:/app/data/inputs
       - ./config.ini:/app/config.ini
       - ./.env:/app/.env
+      - ./lightrag/mineru_parser.py:/app/lightrag/mineru_parser.py
+      - ./lightrag/modalprocessors.py:/app/lightrag/modalprocessors.py
     env_file:
       - .env
     restart: unless-stopped

@@ -58,7 +58,6 @@ RUN --mount=type=cache,target=/root/.local/share/uv \
     && /app/.venv/bin/python -m ensurepip --upgrade
 
 # Prepare offline cache directory and pre-populate tiktoken data
-# Use uv run to execute commands from the virtual environment
 RUN mkdir -p /app/data/tiktoken \
     && uv run lightrag-download-cache --cache-dir /app/data/tiktoken || status=$?; \
     if [ -n "${status:-}" ] && [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then exit "$status"; fi
@@ -67,6 +66,15 @@ RUN mkdir -p /app/data/tiktoken \
 FROM python:3.12-slim
 
 WORKDIR /app
+
+# 👇👇👇【重點修改】喺 Final Stage 安裝 RagAnything 需要嘅 System Libraries 👇👇👇
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0 \
+    poppler-utils \
+    tesseract-ocr \
+    && rm -rf /var/lib/apt/lists/*
+# 👆👆👆 必須加以上呢段，否則 import cv2 同 mineru 會失敗 👆👆👆
 
 # Install uv for package management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -90,7 +98,11 @@ RUN --mount=type=cache,target=/root/.local/share/uv \
     uv sync --frozen --no-dev --extra api --extra offline --no-editable \
     && /app/.venv/bin/python -m ensurepip --upgrade
 
+# 👇👇👇【新增這行】強制補鑊安裝 👇👇👇
+RUN uv pip install raganything
+# 👆👆👆 這行會無視 lock file，直接安裝最新版
 # Create persistent data directories AFTER package installation
+
 RUN mkdir -p /app/data/rag_storage /app/data/inputs /app/data/tiktoken
 
 # Copy offline cache into the newly created directory

@@ -2,7 +2,7 @@
 This module contains all document-related routes for the LightRAG API.
 """
 # 在原本的 imports 下面加入
-from lightrag.api.rag_adapter import is_supported_by_raganything, process_with_raganything
+from lightrag.api.rag_adapter import is_supported_by_raganything, process_with_raganything, RAG_ANYTHING_AVAILABLE
 import asyncio
 from functools import lru_cache
 from lightrag.utils import logger, get_pinyin_sort_key
@@ -1212,19 +1212,33 @@ async def pipeline_enqueue_file(
     
     # [新增區塊 START] RAGAnything 攔截邏輯
     # 定義哪些檔案類型要交給 RAGAnything 處理
+    # [新增區塊 START] RAGAnything 攔截邏輯
+    # 定義哪些檔案類型要交給 RAGAnything 處理
     rag_anything_exts = {".pdf", ".docx", ".pptx", ".jpg", ".jpeg", ".png", ".bmp"}
     file_ext = file_path.suffix.lower()
 
     # 如果 RAGAnything 可用，且檔案類型符合，則使用 RAGAnything
-    if RAGANYTHING_AVAILABLE and file_ext in rag_anything_exts:
+    if RAG_ANYTHING_AVAILABLE and file_ext in rag_anything_exts:
         try:
             logger.info(f"[Route] 檢測到 {file_ext} 檔案，轉交 RAGAnything 處理: {file_path.name}")
             
-            # 呼叫我們在 step 1 寫的新函數
+            # FIX 1: 修正參數調用，並獲取返回的內容 (content)
+            # 注意：這裡傳入 str(file_path) 因為 pathlib.Path 對象有時會導致某些庫報錯
             await process_with_raganything(rag, file_path, track_id)
 
+            # FIX 2: 檢查內容並將其送入 LightRAG 索引 (這是原本漏掉的關鍵步驟)
+            if content and content.strip():
+                await rag.apipeline_enqueue_documents(
+                    input=content, 
+                    file_paths=[file_path.name], 
+                    track_id=track_id
+                )
+                logger.info(f"[RAGAnything] 成功提取並入庫: {file_path.name}")
+            else:
+                logger.warning(f"[RAGAnything] 提取內容為空: {file_path.name}")
+                # 這裡可以選擇報錯或者 return False，視乎你需求
+
             # 處理成功後，執行原本的文件搬移邏輯 (移到 __enqueued__ 資料夾)
-            # 這是為了保持與原有邏輯一致，避免檔案一直留在 input 目錄
             try:
                 enqueued_dir = file_path.parent / "__enqueued__"
                 enqueued_dir.mkdir(exist_ok=True)
@@ -1235,13 +1249,12 @@ async def pipeline_enqueue_file(
             except Exception as move_err:
                 logger.warning(f"Failed to move processed file: {move_err}")
 
-            # 直接返回成功，跳過下方原有的 LightRAG 簡易處理邏輯
+            # 直接返回成功
             return True, track_id
 
         except Exception as e:
             logger.error(f"[RAGAnything] 處理失敗: {e}，嘗試使用預設邏輯回退...")
-            # 如果失敗，記錄錯誤但繼續往下執行，嘗試用原本的邏輯處理 (Fallback)
-            # 如果你希望失敗就直接報錯，這裡可以直接 return False, track_id
+            # 這裡不 return，讓它掉下去執行原本的 LightRAG 邏輯 (Fallback)
     # [新增區塊 END]
 
     try:

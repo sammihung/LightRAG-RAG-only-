@@ -26,6 +26,7 @@ dependencies = [
     "google-api-core>=2.0.0,<3.0.0",
     "google-genai>=1.0.0,<2.0.0",
     "json_repair",
+    "lightrag>=0.1.0b6",
     "nano-vectordb",
     "networkx",
     "numpy>=1.24.0,<3.0.0",
