@@ -9,17 +9,65 @@ services:
         - ghcr.io/hkuds/lightrag:latest
     ports:
       - "${PORT:-9621}:9621"
+      
+    # 👇👇👇【新增】啟用偽終端機 (讓下載進度條顯示出來) 👇👇👇
+    tty: true
+    stdin_open: true
+
     volumes:
-      - ./lightrag/api:/app/lightrag/api
-      - ./lightrag/lightrag.py:/app/lightrag/lightrag.py
-      - ./data/rag_storage:/app/data/rag_storage
-      - ./data/inputs:/app/data/inputs
+      # ---------------------------------------------------------
+      # 💾 [資料持久化 Data Persistence]
+      # ---------------------------------------------------------
+      # 直接掛載整個 data 目錄，這會同時包含:
+      # 1. /app/data/rag_storage (向量庫)
+      # 2. /app/data/inputs (輸入文件)
+      # 3. /app/data/mineru_models (自動下載的模型庫)
+      - ./data:/app/data
+      
+      # 設定檔
       - ./config.ini:/app/config.ini
       - ./.env:/app/.env
-      - ./lightrag/mineru_parser.py:/app/lightrag/mineru_parser.py
-      - ./lightrag/modalprocessors.py:/app/lightrag/modalprocessors.py
+
     env_file:
       - .env
+
+    environment:
+      # ---------------------------------------------------------
+      # ⚙️ [LightRAG 核心設定]
+      # ---------------------------------------------------------
+      - WORKERS=1
+      - TIMEOUT=1800
+      # 延長超時至 30 分鐘 (1800秒)，給 MinerU 足夠時間下載模型和解析 PDF
+      - LIGHTRAG_WORKER_TIMEOUT=1800
+      - LIGHTRAG_FUNC_TIMEOUT=1800
+
+      # ---------------------------------------------------------
+      # 🧠 [MinerU (Magic-PDF) 設定]
+      # ---------------------------------------------------------
+      # 運行模式: 'cpu' 或 'cuda'
+      # 預設 'cpu'。如果有 Nvidia 顯卡，請改為 'cuda' 並啟用下方的 deploy。
+      - MINERU_DEVICE_MODE=cpu
+      
+      # 模型存放位置
+      - MINERU_MODEL_DIR=/app/data/mineru_models
+
+      # 👇👇👇【關鍵新增】強制指定 Config 路徑 (防止找不到設定檔) 👇👇👇
+      # 配合 entrypoint.sh 的複製邏輯，確保 MinerU 一定讀得到
+      - MAGIC_PDF_CONFIG_JSON=/app/magic-pdf.json
+      # 雙重保險 (舊版相容)
+      - MAGIC_PDF_CONFIG=/app/magic-pdf.json
+
+    # ---------------------------------------------------------
+    # 🎮 [GPU 加速支援] (如需啟用 CUDA，請取消以下註解)
+    # ---------------------------------------------------------
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"

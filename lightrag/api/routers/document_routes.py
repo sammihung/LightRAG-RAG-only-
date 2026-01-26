@@ -2,7 +2,7 @@
 This module contains all document-related routes for the LightRAG API.
 """
 # 在原本的 imports 下面加入
-from lightrag.api.rag_adapter import is_supported_by_raganything, process_with_raganything, RAG_ANYTHING_AVAILABLE
+from lightrag.api.rag_adapter import process_with_raganything, RAG_ANYTHING_AVAILABLE
 import asyncio
 from functools import lru_cache
 from lightrag.utils import logger, get_pinyin_sort_key
@@ -1208,52 +1208,39 @@ async def pipeline_enqueue_file(
     # Generate track_id if not provided
     if track_id is None:
         track_id = generate_track_id("unknown")
-    
+
     # [新增區塊 START] RAGAnything 攔截邏輯
-    # 定義哪些檔案類型要交給 RAGAnything 處理
-    # [新增區塊 START] RAGAnything 攔截邏輯
-    # 定義哪些檔案類型要交給 RAGAnything 處理
     rag_anything_exts = {".pdf", ".docx", ".pptx", ".jpg", ".jpeg", ".png", ".bmp"}
     file_ext = file_path.suffix.lower()
-
-    # 如果 RAGAnything 可用，且檔案類型符合，則使用 RAGAnything
+    logger.info(f"🔍 DEBUG: RAG_Status={RAG_ANYTHING_AVAILABLE}, FileExt={file_ext}, Match={file_ext in rag_anything_exts}")
     if RAG_ANYTHING_AVAILABLE and file_ext in rag_anything_exts:
         try:
             logger.info(f"[Route] 檢測到 {file_ext} 檔案，轉交 RAGAnything 處理: {file_path.name}")
             
-            # FIX 1: 修正參數調用，並獲取返回的內容 (content)
-            # 注意：這裡傳入 str(file_path) 因為 pathlib.Path 對象有時會導致某些庫報錯
+            # 1. 直接交給 RAGAnything 處理 (假設它會處理好入庫)
+            # 這裡不需要接回傳值，除非它會 return Fail
             await process_with_raganything(rag, file_path, track_id)
-
-            # FIX 2: 檢查內容並將其送入 LightRAG 索引 (這是原本漏掉的關鍵步驟)
-            if content and content.strip():
-                await rag.apipeline_enqueue_documents(
-                    input=content, 
-                    file_paths=[file_path.name], 
-                    track_id=track_id
-                )
-                logger.info(f"[RAGAnything] 成功提取並入庫: {file_path.name}")
-            else:
-                logger.warning(f"[RAGAnything] 提取內容為空: {file_path.name}")
-                # 這裡可以選擇報錯或者 return False，視乎你需求
-
-            # 處理成功後，執行原本的文件搬移邏輯 (移到 __enqueued__ 資料夾)
+            
+            # 2. 處理成功後，搬移檔案 (這部分代碼是對的)
             try:
                 enqueued_dir = file_path.parent / "__enqueued__"
                 enqueued_dir.mkdir(exist_ok=True)
                 unique_filename = get_unique_filename_in_enqueued(enqueued_dir, file_path.name)
                 target_path = enqueued_dir / unique_filename
-                file_path.rename(target_path)
-                logger.debug(f"Moved file to enqueued: {unique_filename}")
+                
+                # 確保檔案還在才搬 (防止 RAGAnything 已經搬走了)
+                if file_path.exists():
+                    file_path.rename(target_path)
+                    logger.debug(f"Moved file to enqueued: {unique_filename}")
             except Exception as move_err:
                 logger.warning(f"Failed to move processed file: {move_err}")
 
-            # 直接返回成功
+            # 3. 直接回傳 True，告訴系統搞掂了，不要再跑下面的預設流程
             return True, track_id
 
         except Exception as e:
             logger.error(f"[RAGAnything] 處理失敗: {e}，嘗試使用預設邏輯回退...")
-            # 這裡不 return，讓它掉下去執行原本的 LightRAG 邏輯 (Fallback)
+            # 這裡報錯後，程式會自動繼續往下跑，執行原本的 LightRAG 邏輯
     # [新增區塊 END]
 
     try:

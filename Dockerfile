@@ -1,119 +1,115 @@
 # syntax=docker/dockerfile:1
 
-# Frontend build stage
+# ==========================================
+# 1. Frontend Builder (已修復 Cache & Lockfile 問題)
+# ==========================================
 FROM oven/bun:1 AS frontend-builder
-
 WORKDIR /app
 
-# Copy frontend source code
+# 👇 [步驟 1] 只複製 package.json (如果此檔案沒變，Docker 會直接用 Cache 跳過下面那行 install)
+COPY lightrag_webui/package.json ./lightrag_webui/
+
+# 👇 [步驟 2] 安裝依賴 (拿掉了 --frozen-lockfile，保證能跑)
+RUN cd lightrag_webui \
+    && bun install
+
+# 👇 [步驟 3] 這時候才複製剩下的源代碼
 COPY lightrag_webui/ ./lightrag_webui/
 
-# Build frontend assets for inclusion in the API package
-RUN --mount=type=cache,target=/root/.bun/install/cache \
-    cd lightrag_webui \
-    && bun install --frozen-lockfile \
-    && bun run build
+# 👇 [步驟 4] 開始 Build (改代碼只會重跑這一步，超快！)
+RUN cd lightrag_webui && bun run build
 
-# Python build stage - using uv for faster package installation
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
+# ==========================================
+# 2. Python Builder (保持完美的狀態)
+# ==========================================
+FROM ghcr.io/astral-sh/uv:python3.10-bookworm-slim AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV UV_SYSTEM_PYTHON=1
-ENV UV_COMPILE_BYTECODE=1
+ENV UV_HTTP_TIMEOUT=500
+ENV UV_CONCURRENT_DOWNLOADS=4
 
 WORKDIR /app
 
-# Install system deps (Rust is required by some wheels)
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        curl \
-        build-essential \
-        pkg-config \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl build-essential pkg-config \
     && rm -rf /var/lib/apt/lists/* \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 ENV PATH="/root/.cargo/bin:/root/.local/bin:${PATH}"
-
-# Ensure shared data directory exists for uv caches
 RUN mkdir -p /root/.local/share/uv
 
-# Copy project metadata and sources
-COPY pyproject.toml .
-COPY setup.py .
-COPY uv.lock .
+COPY pyproject.toml setup.py uv.lock ./
 
-# Install base, API, and offline extras without the project to improve caching
 RUN --mount=type=cache,target=/root/.local/share/uv \
     uv sync --frozen --no-dev --extra api --extra offline --no-install-project --no-editable
 
-# Copy project sources after dependency layer
-COPY lightrag/ ./lightrag/
+# 安裝 MinerU 全家桶 (含 Table & Formula)
+RUN --mount=type=cache,target=/root/.local/share/uv \
+    uv pip install \
+        --python /app/.venv \
+        "raganything[all]" \
+        huggingface_hub \
+        magic-pdf \
+        opencv-python-headless \
+        ultralytics \
+        doclayout-yolo \
+        paddlepaddle \
+        paddleocr \
+        rapid-table \
+        unimernet
 
-# Include pre-built frontend assets from the previous stage
+RUN echo "🔧 Patching RAGAnything import bug..." \
+    && sed -i 's/from lightrag.mineru_parser import MineruParser/from .mineru_parser import MineruParser/g' \
+       $(find /app/.venv -name "raganything.py")
+
+COPY lightrag/ ./lightrag/
 COPY --from=frontend-builder /app/lightrag/api/webui ./lightrag/api/webui
 
-# Sync project in non-editable mode and ensure pip is available for runtime installs
-RUN --mount=type=cache,target=/root/.local/share/uv \
-    uv sync --frozen --no-dev --extra api --extra offline --no-editable \
-    && /app/.venv/bin/python -m ensurepip --upgrade
+RUN uv pip install --python /app/.venv --no-deps .
 
-# Prepare offline cache directory and pre-populate tiktoken data
 RUN mkdir -p /app/data/tiktoken \
     && uv run lightrag-download-cache --cache-dir /app/data/tiktoken || status=$?; \
     if [ -n "${status:-}" ] && [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then exit "$status"; fi
 
-# Final stage
-FROM python:3.12-slim
+# ==========================================
+# 3. Final Stage (Runtime)
+# ==========================================
+FROM python:3.10-slim
 
 WORKDIR /app
 
-# 👇👇👇【重點修改】喺 Final Stage 安裝 RagAnything 需要嘅 System Libraries 👇👇👇
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1 \
-    libglib2.0-0 \
-    poppler-utils \
-    tesseract-ocr \
-    && rm -rf /var/lib/apt/lists/*
-# 👆👆👆 必須加以上呢段，否則 import cv2 同 mineru 會失敗 👆👆👆
+    libgl1 libglib2.0-0 poppler-utils tesseract-ocr \
+    git git-lfs dos2unix \
+    && rm -rf /var/lib/apt/lists/* \
+    && git lfs install
 
-# Install uv for package management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
 ENV UV_SYSTEM_PYTHON=1
 
-# Copy installed packages and application code
+ENV MINERU_MODEL_DIR="/app/data/mineru_models" \
+    MINERU_REPO_ID="opendatalab/PDF-Extract-Kit" \
+    LIGHTRAG_WORKER_TIMEOUT=1800 \
+    MAGIC_PDF_CONFIG_JSON="/app/magic-pdf.json"
+
 COPY --from=builder /root/.local /root/.local
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/lightrag ./lightrag
-COPY pyproject.toml .
-COPY setup.py .
-COPY uv.lock .
+COPY pyproject.toml setup.py uv.lock ./
 
-# Ensure the installed scripts are on PATH
 ENV PATH=/app/.venv/bin:/root/.local/bin:$PATH
 
-# Install dependencies with uv sync (uses locked versions from uv.lock)
-# And ensure pip is available for runtime installs
-RUN --mount=type=cache,target=/root/.local/share/uv \
-    uv sync --frozen --no-dev --extra api --extra offline --no-editable \
-    && /app/.venv/bin/python -m ensurepip --upgrade
+COPY entrypoint.sh /app/entrypoint.sh
+RUN dos2unix /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
-# 👇👇👇【新增這行】強制補鑊安裝 👇👇👇
-RUN uv pip install raganything
-# 👆👆👆 這行會無視 lock file，直接安裝最新版
-# Create persistent data directories AFTER package installation
-
-RUN mkdir -p /app/data/rag_storage /app/data/inputs /app/data/tiktoken
-
-# Copy offline cache into the newly created directory
+RUN mkdir -p /app/data/rag_storage /app/data/inputs /app/data/tiktoken /app/data/mineru_models
 COPY --from=builder /app/data/tiktoken /app/data/tiktoken
 
-# Point to the prepared cache
 ENV TIKTOKEN_CACHE_DIR=/app/data/tiktoken
 ENV WORKING_DIR=/app/data/rag_storage
 ENV INPUT_DIR=/app/data/inputs
 
-# Expose API port
 EXPOSE 9621
 
-ENTRYPOINT ["python", "-m", "lightrag.api.lightrag_server"]
+ENTRYPOINT ["/app/entrypoint.sh"]
