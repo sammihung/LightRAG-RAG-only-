@@ -110,12 +110,15 @@ LightRAG服务器旨在提供Web UI和API支持。Web UI便于文档索引、知
 * 从PyPI安装
 
 ```bash
-# 使用 uv (推荐)
-uv pip install "lightrag-hku[api]"
-# 或使用 pip
+### 使用 uv 安装 LightRAG 服务器（作为工具，推荐)
+uv tool install "lightrag-hku[api]"
+
+### 或使用 pip
+# python -m venv .venv
+# source .venv/bin/activate  # Windows: .venv\Scripts\activate
 # pip install "lightrag-hku[api]"
 
-# 构建前端代码
+### 构建前端代码
 cd lightrag_webui
 bun install --frozen-lockfile
 bun run build
@@ -141,7 +144,7 @@ source .venv/bin/activate  # 激活虚拟环境 (Linux/macOS)
 
 ### 或使用 pip 和虚拟环境
 # python -m venv .venv
-### source .venv/bin/activate  # Windows: .venv\Scripts\activate
+# source .venv/bin/activate  # Windows: .venv\Scripts\activate
 # pip install -e ".[api]"
 
 # 构建前端代码
@@ -955,6 +958,7 @@ MongoDocStatusStorage       MongoDB
 export NEO4J_URI="neo4j://localhost:7687"
 export NEO4J_USERNAME="neo4j"
 export NEO4J_PASSWORD="password"
+export NEO4J_DATABASE="neo4j" #<----------- 使用 neo4j 社区版 docker 镜像时数据库实例必须为neo4j
 
 # 为 LightRAG 设置日志
 setup_logger("lightrag", level="INFO")
@@ -1097,6 +1101,9 @@ maxclients 500
 - **对于 Neo4j 图数据库，通过标签实现逻辑数据隔离**：`Neo4JStorage`
 
 为了保持与旧数据的兼容性，当未配置工作区时，PostgreSQL 非图存储的默认工作区为 `default`，PostgreSQL AGE 图存储的默认工作区为 null，Neo4j 图存储的默认工作区为 `base`。对于所有外部存储，系统提供专用的工作区环境变量来覆盖通用的 `WORKSPACE` 环境变量配置。这些存储特定的工作区环境变量包括：`REDIS_WORKSPACE`、`MILVUS_WORKSPACE`、`QDRANT_WORKSPACE`、`MONGODB_WORKSPACE`、`POSTGRES_WORKSPACE`、`NEO4J_WORKSPACE`。
+
+**使用示例：**
+有关在单个应用程序中管理多个隔离知识库（例如，将"书籍"内容与"人力资源政策"分开）的实际演示，请参阅 [Workspace Demo](examples/lightrag_gemini_workspace_demo.py)。
 
 ### AGENTS.md -- 指导编码代理
 
