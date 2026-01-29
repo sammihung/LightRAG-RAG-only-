@@ -22,35 +22,35 @@ ENV UV_COMPILE_BYTECODE=1
 
 WORKDIR /app
 
-# 👇 [修正] 這裡加上了 'git'，否則 uv 無法下載你的 raganything fork
+# 安裝必要工具，加入 dos2unix 用於處理 Windows 換行符號問題
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        curl build-essential pkg-config git \
+        curl build-essential pkg-config git dos2unix \
     && rm -rf /var/lib/apt/lists/* \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 ENV PATH="/root/.cargo/bin:/root/.local/bin:${PATH}"
 RUN mkdir -p /root/.local/share/uv
 
-# 2. 複製依賴定義
+# 複製依賴定義
 COPY pyproject.toml .
 COPY setup.py .
 COPY uv.lock .
 
-# 3. 安裝依賴
+# 安裝依賴
 RUN --mount=type=cache,target=/root/.local/share/uv \
     uv sync --frozen --no-dev --extra api --extra offline --no-install-project --no-editable
 
-# 4. 複製源代碼
+# 複製源代碼
 COPY lightrag/ ./lightrag/
 COPY --from=frontend-builder /app/lightrag/api/webui ./lightrag/api/webui
 
-# 5. 再次 Sync 確保環境完整
+# 再次 Sync 確保環境完整
 RUN --mount=type=cache,target=/root/.local/share/uv \
     uv sync --frozen --no-dev --extra api --extra offline --no-editable \
     && /app/.venv/bin/python -m ensurepip --upgrade
 
-# 6. 下載 Tiktoken Cache
+# 下載 Tiktoken Cache
 RUN mkdir -p /app/data/tiktoken \
     && uv run lightrag-download-cache --cache-dir /app/data/tiktoken || status=$?; \
     if [ -n "${status:-}" ] && [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then exit "$status"; fi
@@ -62,10 +62,10 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Runtime 也需要 Git (因為 MinerU 可能會用到)
+# Runtime 安裝 dos2unix 確保萬無一失
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 libglib2.0-0 poppler-utils tesseract-ocr \
-    git git-lfs \
+    git git-lfs dos2unix \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -93,9 +93,10 @@ ENV INPUT_DIR=/app/data/inputs
 
 EXPOSE 9621
 
-# 記得要 Copy 進去
+# --- 修復重點區 ---
 COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+# 1. 使用 dos2unix 強制將 CRLF 轉為 LF
+# 2. 賦予執行權限
+RUN dos2unix /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
-# 指向腳本
 ENTRYPOINT ["/app/entrypoint.sh"]

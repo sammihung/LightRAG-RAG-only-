@@ -61,7 +61,7 @@ CONFIG_CONTENT=$(cat <<EOF
   "models-dir": "$MODEL_DIR/models",
   "device-mode": "$DEVICE_MODE",
   "layout-config": { "model": "doclayout_yolo" },
-  "formula-config": { "mfd_model": "yolo_v8", "mfr_model": "unimernet_small" },
+  "formula-config": { "mfd_model": "doclayout_yolo", "mfr_model": "unimernet_small" },
   "table-config": { "model": "rapid_table", "model_dir": "$MODEL_DIR/models/Table/RapidTable" }
 }
 EOF
