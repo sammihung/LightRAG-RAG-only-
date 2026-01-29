@@ -1,6 +1,6 @@
 services:
   lightrag:
-    container_name: lightrag
+    container_name: lightrag-rag
     image: ghcr.io/hkuds/lightrag:latest
     build:
       context: .
@@ -10,19 +10,19 @@ services:
     ports:
       - "${PORT:-9621}:9621"
       
-    # 👇👇👇【新增】啟用偽終端機 (讓下載進度條顯示出來) 👇👇👇
+    # 👇 保持開啟，這對看 Log 很有幫助
     tty: true
     stdin_open: true
 
     volumes:
       # ---------------------------------------------------------
-      # 💾 [資料持久化 Data Persistence]
+      # 💾 [資料持久化] (建議改用分開掛載，避免覆蓋掉 Image 裡的檔案)
       # ---------------------------------------------------------
-      # 直接掛載整個 data 目錄，這會同時包含:
-      # 1. /app/data/rag_storage (向量庫)
-      # 2. /app/data/inputs (輸入文件)
-      # 3. /app/data/mineru_models (自動下載的模型庫)
-      - ./data:/app/data
+      # ⚠️ 注意：不要掛載整個 /app/data，因為 Docker Image 裡已經預載了 tiktoken
+      # 如果掛載整個目錄，本地空的 ./data 會覆蓋掉容器內的檔案。
+      - ./data/rag_storage:/app/data/rag_storage
+      - ./data/inputs:/app/data/inputs
+      - ./data/mineru_models:/app/data/mineru_models
       
       # 設定檔
       - ./config.ini:/app/config.ini
@@ -37,36 +37,32 @@ services:
       # ---------------------------------------------------------
       - WORKERS=1
       - TIMEOUT=1800
-      # 延長超時至 30 分鐘 (1800秒)，給 MinerU 足夠時間下載模型和解析 PDF
       - LIGHTRAG_WORKER_TIMEOUT=1800
       - LIGHTRAG_FUNC_TIMEOUT=1800
 
       # ---------------------------------------------------------
       # 🧠 [MinerU (Magic-PDF) 設定]
       # ---------------------------------------------------------
-      # 運行模式: 'cpu' 或 'cuda'
-      # 預設 'cpu'。如果有 Nvidia 顯卡，請改為 'cuda' 並啟用下方的 deploy。
-      - MINERU_DEVICE_MODE=cpu
+      # 🔥 [關鍵修改 1] 改為 cuda 以啟用顯卡加速
+      - MINERU_DEVICE_MODE=cuda
       
       # 模型存放位置
       - MINERU_MODEL_DIR=/app/data/mineru_models
 
-      # 👇👇👇【關鍵新增】強制指定 Config 路徑 (防止找不到設定檔) 👇👇👇
-      # 配合 entrypoint.sh 的複製邏輯，確保 MinerU 一定讀得到
+      # 設定檔路徑
       - MAGIC_PDF_CONFIG_JSON=/app/magic-pdf.json
-      # 雙重保險 (舊版相容)
       - MAGIC_PDF_CONFIG=/app/magic-pdf.json
 
     # ---------------------------------------------------------
-    # 🎮 [GPU 加速支援] (如需啟用 CUDA，請取消以下註解)
+    # 🎮 [GPU 加速支援] (🔥 [關鍵修改 2] 解除註解並啟用)
     # ---------------------------------------------------------
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1          # 如果有多張卡想全用，改為 'all'
+              capabilities: [gpu]
 
     restart: unless-stopped
     extra_hosts:

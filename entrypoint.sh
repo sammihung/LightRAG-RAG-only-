@@ -30,9 +30,10 @@ else
 fi
 
 # ==============================================================================
-# 3. 檢查並下載模型
+# 3. 檢查並下載模型 (保留這個重要功能！)
 # ==============================================================================
-if [ ! -d "$MODEL_DIR/models" ]; then
+# 檢查具體的 YOLO 權重文件是否存在，而不僅僅是資料夾
+if [ ! -f "$MODEL_DIR/models/MFD/weights.pt" ]; then
     echo "⚠️ [MinerU-Init] 未偵測到模型，準備自動下載..."
     mkdir -p "$MODEL_DIR"
     python -c "
@@ -51,7 +52,7 @@ else
 fi
 
 # ==============================================================================
-# 4. 生成並分發 Config
+# 4. 生成 Config
 # ==============================================================================
 echo "⚙️ [MinerU-Init] 生成設定檔內容..."
 CONFIG_CONTENT=$(cat <<EOF
@@ -70,63 +71,7 @@ echo "$CONFIG_CONTENT" > "$CONFIG_FILE_APP"
 echo "$CONFIG_CONTENT" > "$CONFIG_FILE_DATA"
 echo "✅ [MinerU-Init] 設定檔已寫入: /root, /app, /app/data"
 
-# ==============================================================================
-# 5. [HOTFIX] 地毯式修復 (Recursive Patching)
-# ==============================================================================
-echo "🔧 [Code-Fix] 執行地毯式代碼修復..."
-
-# 找出 raganything 包的安裝路徑
-PKG_DIR=$(find /app/.venv -type d -name "raganything" | head -n 1)
-
-if [ -d "$PKG_DIR" ]; then
-    echo "📂 找到目標目錄: $PKG_DIR"
-    
-    # 使用 Python 遞歸掃描並修改所有 .py 檔案
-    python -c "
-import os
-import re
-
-target_dir = '$PKG_DIR'
-count_formula = 0
-count_table = 0
-
-print(f'🔍 開始掃描目錄: {target_dir}')
-
-for root, dirs, files in os.walk(target_dir):
-    for file in files:
-        if file.endswith('.py'):
-            file_path = os.path.join(root, file)
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            new_content = content
-            
-            # 1. 修復 Import (如果存在)
-            new_content = new_content.replace('from lightrag.mineru_parser import MineruParser', 'from .mineru_parser import MineruParser')
-            
-            # 2. 強力關閉 Formula (處理各種寫法: =, :, 空格)
-            # 匹配 apply_formula=True 或 'apply_formula': True
-            new_content = re.sub(r'([\"\']?apply_formula[\"\']?)\s*[:=]\s*True', r'\1=False', new_content)
-            
-            # 3. 強力開啟 Table
-            # 匹配 apply_table=False 或 'apply_table': False
-            new_content = re.sub(r'([\"\']?apply_table[\"\']?)\s*[:=]\s*False', r'\1=True', new_content)
-
-            if new_content != content:
-                print(f'✏️ 修復檔案: {file}')
-                if 'apply_formula=False' in new_content: count_formula += 1
-                if 'apply_table=True' in new_content: count_table += 1
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    f.write(new_content)
-
-print(f'✅ 修復完成! 共修改 Formula 處: {count_formula}, Table 處: {count_table}')
-"
-else
-    echo "⚠️ [Code-Fix] 未找到 raganything 目錄，跳過修復。"
-fi
-
-echo "🔍 [Dep-Check] 確認環境完整性..."
-python -c "import magic_pdf, cv2, ultralytics, paddle, rapid_table; print('✅ 所有引擎檢測通過！Ready to launch.')"
+# ❌ [已刪除] 原本在這裡的 "Section 5: Hotfix" 已經不需要了，因為我們在 Git 源碼修好了
 
 # ==============================================================================
 # 6. 啟動 LightRAG Server
