@@ -75,10 +75,17 @@ ENV UV_SYSTEM_PYTHON=1
 COPY --from=builder /root/.local /root/.local
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/lightrag ./lightrag
+
+# 🔥 [雙重保險 1] 強制再複製一次前端編譯檔案到最終 Image
+# 這樣就算 Python 從 /app/lightrag 讀取，也能確實找到 webui 資料夾
+COPY --from=frontend-builder /app/lightrag/api/webui ./lightrag/api/webui
+
 COPY pyproject.toml .
 COPY setup.py .
 COPY uv.lock .
 
+# 🔥 [雙重保險 2] 設定 PYTHONPATH，確保 Python 優先讀取 /app，而不是 .venv 裡的舊套件
+ENV PYTHONPATH=/app:$PYTHONPATH
 ENV PATH=/app/.venv/bin:/root/.local/bin:$PATH
 
 # 建立數據目錄

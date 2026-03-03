@@ -1,69 +1,32 @@
+version: '3.8'
+
 services:
   lightrag:
-    container_name: lightrag-rag
+    container_name: lightrag_api_only
+    # 如果你想重新 build image，請取消註解下面兩行
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
     image: ghcr.io/hkuds/lightrag:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
-      tags:
-        - ghcr.io/hkuds/lightrag:latest
     ports:
-      - "${PORT:-9621}:9621"
-      
-    # 👇 保持開啟，這對看 Log 很有幫助
-    tty: true
-    stdin_open: true
-
+      # 前面是你主機對外的 Port (9622)，後面是容器內部的 Port (9621)
+      - "9622:9621" 
+    
     volumes:
-      # ---------------------------------------------------------
-      # 💾 [資料持久化] (建議改用分開掛載，避免覆蓋掉 Image 裡的檔案)
-      # ---------------------------------------------------------
-      # ⚠️ 注意：不要掛載整個 /app/data，因為 Docker Image 裡已經預載了 tiktoken
-      # 如果掛載整個目錄，本地空的 ./data 會覆蓋掉容器內的檔案。
       - ./data/rag_storage:/app/data/rag_storage
       - ./data/inputs:/app/data/inputs
       - ./data/mineru_models:/app/data/mineru_models
-      
-      # 設定檔
       - ./config.ini:/app/config.ini
       - ./.env:/app/.env
 
-    env_file:
-      - .env
-
     environment:
-      # ---------------------------------------------------------
-      # ⚙️ [LightRAG 核心設定]
-      # ---------------------------------------------------------
+      - MINERU_MODEL_DIR=/app/data/mineru_models
       - WORKERS=1
       - TIMEOUT=1800
-      - LIGHTRAG_WORKER_TIMEOUT=1800
-      - LIGHTRAG_FUNC_TIMEOUT=1800
 
-      # ---------------------------------------------------------
-      # 🧠 [MinerU (Magic-PDF) 設定]
-      # ---------------------------------------------------------
-      # 🔥 [關鍵修改 1] 改為 cuda 以啟用顯卡加速
-      - MINERU_DEVICE_MODE=cuda
-      
-      # 模型存放位置
-      - MINERU_MODEL_DIR=/app/data/mineru_models
+    networks:
+      - ai_network
 
-      # 設定檔路徑
-      - MAGIC_PDF_CONFIG_JSON=/app/magic-pdf.json
-      - MAGIC_PDF_CONFIG=/app/magic-pdf.json
-
-    # ---------------------------------------------------------
-    # 🎮 [GPU 加速支援] (🔥 [關鍵修改 2] 解除註解並啟用)
-    # ---------------------------------------------------------
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1          # 如果有多張卡想全用，改為 'all'
-              capabilities: [gpu]
-
-    restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+networks:
+  ai_network:
+    driver: bridge

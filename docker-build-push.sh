@@ -1,77 +1,83 @@
 #!/bin/bash
 set -e
 
-# Configuration
-IMAGE_NAME="ghcr.io/hkuds/lightrag"
-DOCKERFILE="Dockerfile"
-TAG="latest"
+# ==============================================================================
+# 1. 變數與路徑設定
+# ==============================================================================
+MODEL_DIR="${MINERU_MODEL_DIR:-/app/data/mineru_models}"
+REPO_ID="${MINERU_REPO_ID:-opendatalab/PDF-Extract-Kit}"
 
-# Get version from git tags
-VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
+CONFIG_FILE_ROOT="/root/magic-pdf.json"
+CONFIG_FILE_APP="/app/magic-pdf.json"
+CONFIG_FILE_DATA="/app/data/magic-pdf.json"
 
-echo "=================================="
-echo "  Multi-Architecture Docker Build"
-echo "=================================="
-echo "Image: ${IMAGE_NAME}:${TAG}"
-echo "Version: ${VERSION}"
-echo "Platforms: linux/amd64, linux/arm64"
-echo "=================================="
-echo ""
+echo "🚀 [MinerU-Init] 初始化環境..."
 
-# Check Docker login status (skip if CR_PAT is set for CI/CD)
-if [ -z "$CR_PAT" ]; then
-    if ! docker info 2>/dev/null | grep -q "Username"; then
-        echo "⚠️  Warning: Not logged in to Docker registry"
-        echo "Please login first: docker login ghcr.io"
-        echo "Or set CR_PAT environment variable for automated login"
-        echo ""
-        read -p "Continue anyway? (y/n) " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            exit 1
-        fi
+# ==============================================================================
+# 2. 智能 GPU 偵測
+# ==============================================================================
+if [ -z "$MINERU_DEVICE_MODE" ]; then
+    echo "🔍 [MinerU-Init] 未設定運行模式，正在自動偵測 GPU..."
+    # 加上 2>/dev/null 避免沒有 torch 時噴出長篇報錯
+    if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
+        export DEVICE_MODE="cuda"
+    else
+        export DEVICE_MODE="cpu"
     fi
+    echo "💡 [MinerU-Init] 自動偵測結果: $DEVICE_MODE"
 else
-    echo "Using CR_PAT environment variable for authentication"
+    export DEVICE_MODE="$MINERU_DEVICE_MODE"
+    echo "⚙️ [MinerU-Init] 使用環境變數設定: $DEVICE_MODE"
 fi
 
-# Check if buildx builder exists, create if not
-if ! docker buildx ls | grep -q "desktop-linux"; then
-    echo "Creating buildx builder..."
-    docker buildx create --name desktop-linux --use
-    docker buildx inspect --bootstrap
+# ==============================================================================
+# 3. 檢查並下載模型 (結合 hf_transfer 加速)
+# ==============================================================================
+# 檢查具體的 YOLO 權重文件是否存在，而不僅僅是資料夾
+if [ ! -f "$MODEL_DIR/models/MFD/weights.pt" ]; then
+    echo "⚠️ [MinerU-Init] 未偵測到模型，準備自動下載..."
+    mkdir -p "$MODEL_DIR"
+    
+    # 開啟 HF Transfer 光速下載引擎
+    export HF_HUB_ENABLE_HF_TRANSFER=1 
+    
+    python -c "
+import os
+from huggingface_hub import snapshot_download
+try:
+    print('⬇️ 開始下載模型 (約 5GB+)，已啟用 hf_transfer 加速...')
+    snapshot_download(repo_id='$REPO_ID', local_dir='$MODEL_DIR', resume_download=True)
+    print('✅ 模型下載完成！')
+except Exception as e:
+    print(f'❌ 下載失敗: {e}')
+    exit(1)
+"
 else
-    echo "Using existing buildx builder: desktop-linux"
-    docker buildx use desktop-linux
+    echo "✅ [MinerU-Init] 模型已存在，跳過下載。"
 fi
 
-echo ""
-echo "Building and pushing multi-architecture image..."
-echo ""
+# ==============================================================================
+# 4. 生成 Config
+# ==============================================================================
+echo "⚙️ [MinerU-Init] 生成設定檔內容..."
+CONFIG_CONTENT=$(cat <<EOF
+{
+  "bucket_info": { "bucket-name-1": ["ak", "sk", "endpoint"], "bucket-name-2": ["ak", "sk", "endpoint"] },
+  "models-dir": "$MODEL_DIR/models",
+  "device-mode": "$DEVICE_MODE",
+  "layout-config": { "model": "doclayout_yolo" },
+  "formula-config": { "mfd_model": "doclayout_yolo", "mfr_model": "unimernet_small" },
+  "table-config": { "model": "rapid_table", "model_dir": "$MODEL_DIR/models/Table/RapidTable" }
+}
+EOF
+)
+echo "$CONFIG_CONTENT" > "$CONFIG_FILE_ROOT"
+echo "$CONFIG_CONTENT" > "$CONFIG_FILE_APP"
+echo "$CONFIG_CONTENT" > "$CONFIG_FILE_DATA"
+echo "✅ [MinerU-Init] 設定檔已寫入: /root, /app, /app/data"
 
-# Build and push
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  --file ${DOCKERFILE} \
-  --tag ${IMAGE_NAME}:${TAG} \
-  --tag ${IMAGE_NAME}:${VERSION} \
-  --push \
-  .
-
-echo ""
-echo "✓ Build and push complete!"
-echo ""
-echo "Images pushed:"
-echo "  - ${IMAGE_NAME}:${TAG}"
-echo "  - ${IMAGE_NAME}:${VERSION}"
-echo ""
-echo "Verifying multi-architecture manifest..."
-echo ""
-
-# Verify
-docker buildx imagetools inspect ${IMAGE_NAME}:${TAG}
-
-echo ""
-echo "✓ Verification complete!"
-echo ""
-echo "Pull with: docker pull ${IMAGE_NAME}:${TAG}"
+# ==============================================================================
+# 6. 啟動 LightRAG Server
+# ==============================================================================
+echo "✨ [LightRAG] 啟動主程式..."
+exec python -m lightrag.api.lightrag_server

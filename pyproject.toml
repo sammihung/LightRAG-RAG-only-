@@ -93,6 +93,16 @@ api = [
     "pypdf>=6.1.0",                 # PDF processing
     "python-docx>=0.8.11,<2.0.0",   # DOCX processing
     "python-pptx>=0.6.21,<2.0.0",   # PPTX processing
+    
+    # 🔥 加入：MinerU (PDF Extract) 與 GPU 動態偵測/加速必備套件
+    "huggingface-hub[hf-transfer]>=0.23.0", # 提供 5GB 模型的光速下載引擎
+    "torch>=2.0.0",                         # 用於 GPU 自動偵測及模型推論
+    "magic-pdf[full]>=0.6.1",               # MinerU 核心解析引擎
+]
+
+# 🪶 新增：專為瘦身版打造的輕量依賴 (Lite Mode)
+lite = [
+    "lightrag-hku[api]",
 ]
 
 # Advanced document processing engine (optional)
